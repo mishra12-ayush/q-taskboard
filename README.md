@@ -87,6 +87,87 @@ curl -X POST http://localhost:3000/api/auth/login \
 curl -H "Authorization: Bearer <token>" http://localhost:3000/api/projects
 ```
 
+## Airtable Task Export
+
+Required environment variables:
+
+```bash
+AIRTABLE_API_KEY=pat_your_airtable_personal_access_token
+AIRTABLE_BASE_ID=app_your_base_id
+AIRTABLE_TABLE_NAME=Tasks
+```
+
+`AIRTABLE_TASKS_TABLE` is still accepted as a fallback for older local setups.
+
+Expected Airtable table structure for `AIRTABLE_TABLE_NAME`:
+
+| Field name | Type |
+|------------|------|
+| Task ID | Single line text, unique |
+| Project ID | Single line text |
+| Project Name | Single line text |
+| Title | Single line text |
+| Description | Long text |
+| Status | Single select or single line text |
+| Assignee Name | Single line text |
+| Assignee Email | Email or single line text |
+| Created By Name | Single line text |
+| Created By Email | Email or single line text |
+| Position | Number |
+| Created At | Date/time or single line text |
+| Updated At | Date/time or single line text |
+
+Setup and validation commands:
+
+```bash
+npm install
+npx prisma migrate deploy
+npx prisma generate
+npm run db:seed
+npm run typecheck
+npm test
+npm run dev
+```
+
+Proof curl:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"meera@taskboard.dev","password":"password123"}' \
+  | node -e "process.stdin.on('data', d => console.log(JSON.parse(d).token))")
+
+PROJECT_ID=$(curl -s http://localhost:3000/api/projects \
+  -H "Authorization: Bearer $TOKEN" \
+  | node -e "process.stdin.on('data', d => console.log(JSON.parse(d).projects[0].id))")
+
+curl -X POST "http://localhost:3000/api/projects/$PROJECT_ID/export/airtable" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Loom demo validation steps:
+
+1. Show the `.env` file has the three Airtable variables set.
+2. Open Airtable and show the `Tasks` table with the expected fields.
+3. Run `npm run typecheck` and `npm test`.
+4. Start the app with `npm run dev`.
+5. Log in as `meera@taskboard.dev` / `password123`.
+6. Open a project where the user is admin/member and click `export to Airtable`.
+7. Show the loading state, then the success summary.
+8. Refresh Airtable and show task rows were created.
+9. Click export again and show rows are updated rather than duplicated because `Task ID` is reused.
+10. Log in as `dev@example.com` / `password123` on Q3 Launch and show the export button is hidden.
+11. Run the proof curl with the viewer token and show the API returns `403`.
+
+Git commands after validation:
+
+```bash
+git status --short
+git add package-lock.json README.md src/lib/airtable.ts "src/app/api/projects/[id]/export/airtable/route.ts" "src/app/projects/[id]/page.tsx" src/tests/airtable-service.test.ts src/tests/airtable-export-route.test.ts
+git commit -m "Add Airtable task export"
+git status --short
+```
+
 ## API Endpoints
 
 ### Auth

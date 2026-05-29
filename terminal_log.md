@@ -94,3 +94,27 @@ Fix:
 added scrollable modal body
 kept actions/buttons accessible
 preserved existing functionality
+
+__________________________________________________________________________________________________-
+Part 3c – Airtable Export
+Implemented Airtable export functionality for tasks with proper role-based access control. Admin users can export project tasks to Airtable, while viewers are restricted from accessing the export endpoint.
+
+During implementation, I initially faced issues with Airtable configuration and permissions. The export failed because:
+
+the Airtable token did not have write access,
+environment variables were not aligned with the code expectations,
+and the Airtable schema/primary field setup did not match the export logic.
+Some of the table columns had a different type value, than what was expected in the code.
+I resolved these by:
+
+updating the Airtable PAT scopes (data.records:read and data.records:write),
+fixing .env.local configuration values,
+aligning the Airtable table schema with the backend fields,
+setting Task ID as the primary field to support idempotent updates,
+and restarting Docker services to reload environment variables.
+I also verified:
+
+successful Airtable exports,
+prevention of duplicate rows on repeated exports,
+hidden export access for viewers,
+and passing test/typecheck validation.
