@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api-client";
-import type { ApiTask, ApiProjectMember, TaskStatus } from "@/types";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch, getStoredUser } from "@/lib/api-client";
+import type { ApiTask, ApiProjectMember, TaskStatus, ApiComment } from "@/types";
 import { STATUS_LABELS, STATUS_ORDER } from "@/types";
 
 type Props = {
@@ -19,7 +19,17 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
   const [description, setDescription] = useState(task.description ?? "");
   const [status, setStatus] = useState<TaskStatus>(task.status);
   const [assigneeId, setAssigneeId] = useState<string>(task.assigneeId ?? "");
+  const [commentBody, setCommentBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const currentUser = getStoredUser();
+  const currentRole = members.find((m) => m.user.id === currentUser?.id)?.role;
+  const canComment = currentRole === "admin" || currentRole === "member";
+
+  const comments = useQuery({
+    queryKey: ["task-comments", task.id],
+    queryFn: () =>
+      apiFetch<{ comments: ApiComment[] }>(`/api/tasks/${task.id}/comments`),
+  });
 
   const updateTask = useMutation({
     mutationFn: (input: Partial<ApiTask>) =>
@@ -44,6 +54,19 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
     onError: (err) => setError(err instanceof Error ? err.message : "delete failed"),
   });
 
+  const createComment = useMutation({
+    mutationFn: (body: string) =>
+      apiFetch<{ comment: ApiComment }>(`/api/tasks/${task.id}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      }),
+    onSuccess: () => {
+      setCommentBody("");
+      queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "comment failed"),
+  });
+
   function onSave() {
     setError(null);
     updateTask.mutate({
@@ -54,22 +77,31 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
     });
   }
 
+  function onCommentSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const body = commentBody.trim();
+    if (!body) return;
+    setError(null);
+    createComment.mutate(body);
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/60 flex items-center justify-center px-4 z-50"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl bg-surface border border-border rounded-lg p-6"
+        className="w-full max-w-xl max-h-[calc(100vh-2rem)] bg-surface border border-border rounded-lg flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between p-6 pb-4 shrink-0">
           <h2 className="text-lg font-semibold">edit task</h2>
           <button onClick={onClose} className="text-muted hover:text-white">
             ✕
           </button>
         </div>
 
+        <div className="px-6 pb-4 overflow-y-auto">
         <label className="block mb-3">
           <span className="text-xs text-muted">title</span>
           <input
@@ -123,13 +155,61 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
           </label>
         </div>
 
+        <section className="border-t border-border pt-4 mb-4">
+          <h3 className="text-sm font-medium mb-3">comments</h3>
+          <div className="space-y-3 mb-3">
+            {comments.isLoading ? (
+              <p className="text-xs text-muted">loading comments...</p>
+            ) : comments.error ? (
+              <p className="text-xs text-red-400">
+                {comments.error instanceof Error
+                  ? comments.error.message
+                  : "failed to load comments"}
+              </p>
+            ) : comments.data?.comments.length ? (
+              comments.data.comments.map((comment) => (
+                <article key={comment.id} className="bg-bg border border-border rounded-md p-3">
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <span className="text-xs font-medium">{comment.author.name}</span>
+                    <time className="text-xs text-muted" dateTime={comment.createdAt}>
+                      {new Date(comment.createdAt).toLocaleString()}
+                    </time>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap break-words">{comment.body}</p>
+                </article>
+              ))
+            ) : (
+              <p className="text-xs text-muted italic">no comments</p>
+            )}
+          </div>
+          {canComment && (
+            <form onSubmit={onCommentSubmit} className="flex gap-2">
+              <input
+                type="text"
+                value={commentBody}
+                onChange={(e) => setCommentBody(e.target.value)}
+                placeholder="add a comment"
+                className="flex-1 rounded-md bg-bg border border-border px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={createComment.isPending || !commentBody.trim()}
+                className="text-sm px-4 py-2 rounded-md bg-accent text-white hover:bg-indigo-500 disabled:opacity-50"
+              >
+                post
+              </button>
+            </form>
+          )}
+        </section>
+
         {error && (
-          <p className="text-sm text-red-400 mb-3" role="alert">
+          <p className="text-sm text-red-400" role="alert">
             {error}
           </p>
         )}
+        </div>
 
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 p-6 pt-4 border-t border-border shrink-0">
           <button
             onClick={() => deleteTask.mutate()}
             disabled={deleteTask.isPending}
